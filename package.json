@@ -2,11 +2,13 @@
   "name": "media-api-lab",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --test",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -1,68 +1,13 @@
 import { prisma } from "@/lib/prisma";
-
-function parseJson(text) {
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { raw: text };
-  }
-}
-
-function extractRequestId(data) {
-  return (
-    data?.id ||
-    data?.request_id ||
-    data?.task_id ||
-    data?.generation_id ||
-    data?.data?.id ||
-    data?.data?.request_id ||
-    data?.data?.task_id ||
-    data?.data?.generation_id
-  );
-}
-
-function extractStatus(data) {
-  const status =
-    data?.status ||
-    data?.state ||
-    data?.data?.status ||
-    data?.data?.state ||
-    data?.task?.status ||
-    data?.data?.task?.status;
-
-  return typeof status === "string" ? status.toLowerCase() : undefined;
-}
-
-function extractVideoUrl(data) {
-  const candidates = [
-    data?.video_url,
-    data?.url,
-    data?.output_url,
-    data?.data?.video_url,
-    data?.data?.url,
-    data?.data?.output_url,
-    data?.result?.video_url,
-    data?.result?.url,
-    data?.data?.result?.video_url,
-    data?.data?.result?.url,
-    Array.isArray(data?.outputs) ? data.outputs[0] : undefined,
-    Array.isArray(data?.output) ? data.output[0] : undefined,
-    Array.isArray(data?.data?.outputs) ? data.data.outputs[0] : undefined,
-    Array.isArray(data?.data?.output) ? data.data.output[0] : undefined,
-    data?.data?.content?.video_url,
-    data?.content?.video_url,
-  ];
-
-  return candidates.find((candidate) => typeof candidate === "string" && candidate);
-}
-
-function isCompleted(status) {
-  return ["completed", "complete", "succeeded", "success", "done"].includes(status);
-}
-
-function isFailed(status) {
-  return ["failed", "failure", "error", "cancelled", "canceled"].includes(status);
-}
+import {
+  extractFailureReason,
+  extractRequestId,
+  extractStatus,
+  extractVideoUrl,
+  isCompleted,
+  isFailed,
+  parseJson,
+} from "./ai-utils";
 
 function providerHeaders(apiKey, authMode) {
   const headers = {
@@ -136,10 +81,6 @@ export const AIService = {
       return { status: "completed", imageUrl: creation.imageUrl };
     }
 
-    if (creation?.status === "failed") {
-      throw new Error(creation.error || "Generation failed.");
-    }
-
     const res = await fetch(statusUrl(apiUrl, requestId), {
       method: "GET",
       headers: providerHeaders(apiKey, authMode),
@@ -161,9 +102,9 @@ export const AIService = {
     }
 
     if (isFailed(status)) {
-      const error = data?.error?.message || data?.error || data?.message || "Generation failed.";
+      const error = extractFailureReason(data);
       await updateCreation(creation, { status: "failed", error: String(error) });
-      throw new Error(String(error));
+      return { status: "failed", error: String(error), providerResponse: data };
     }
 
     return { status: "processing", providerResponse: data };

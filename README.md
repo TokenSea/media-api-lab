@@ -69,7 +69,6 @@ Archive:
 The Seedance page supports:
 
 - Volcengine official `content` payloads.
-- OpenAI-compatible payloads.
 - Raw JSON payload override.
 
 The GPT Image page supports official-compatible image fields such as `model`, `prompt`, `size`, `quality`, `background`, `output_format`, `output_compression`, `moderation`, `n`, `stream`, `partial_images`, and `user`.
@@ -100,10 +99,9 @@ Open `http://localhost:3000`, select a tester, enter your API URL and API key, t
 ## Scripts
 
 - `npm run dev`: start the Next.js dev server.
+- `npm test`: run Node regression tests.
 - `npm run lint`: run ESLint.
 - `npm run build`: generate Prisma client and build the Next.js app.
-
-There is no `npm test` script in the project currently.
 
 ## Notes
 

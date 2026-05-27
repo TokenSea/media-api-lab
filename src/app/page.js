@@ -15,11 +15,15 @@ import { FiDownload } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { downloadMedia } from "@/lib/utils";
+import {
+  SEEDANCE_FORMATS,
+  buildSeedancePayload,
+  mediaUrl,
+} from "@/lib/seedance-payload";
 
 const FORMAT_OPTIONS = [
-  { value: "native", label: "Volcengine Official" },
-  { value: "openai", label: "OpenAI Compatible" },
-  { value: "raw", label: "Raw JSON" },
+  { value: SEEDANCE_FORMATS.official, label: "Volcengine Official" },
+  { value: SEEDANCE_FORMATS.raw, label: "Raw JSON" },
 ];
 
 const AUTH_OPTIONS = [
@@ -28,7 +32,7 @@ const AUTH_OPTIONS = [
   { value: "both", label: "Both" },
 ];
 
-const RATIO_OPTIONS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].map((value) => ({
+const RATIO_OPTIONS = ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].map((value) => ({
   value,
   label: value,
 }));
@@ -38,13 +42,21 @@ const RESOLUTION_OPTIONS = ["480p", "720p", "1080p"].map((value) => ({
   label: value,
 }));
 
-const DURATION_OPTIONS = [5, 10, 15].map((value) => ({
+const DURATION_OPTIONS = [-1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((value) => ({
   value: String(value),
-  label: `${value}s`,
+  label: value === -1 ? "Auto (-1)" : `${value}s`,
 }));
 
 const DEFAULT_API_URL = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks";
 const DEFAULT_MODEL = "doubao-seedance-2-0-260128";
+const IMAGE_ROLE_OPTIONS = [
+  { value: "", label: "No role" },
+  { value: "first_frame", label: "first_frame" },
+  { value: "last_frame", label: "last_frame" },
+  { value: "reference_image", label: "reference_image" },
+];
+const VIDEO_ROLE_OPTIONS = [{ value: "reference_video", label: "reference_video" }];
+const AUDIO_ROLE_OPTIONS = [{ value: "reference_audio", label: "reference_audio" }];
 
 function CustomSelect({ label, value, options, onChange, icon: Icon }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -102,28 +114,15 @@ function CustomSelect({ label, value, options, onChange, icon: Icon }) {
   );
 }
 
-function parseJsonField(value, fallback) {
-  if (!value.trim()) return fallback;
-  return JSON.parse(value);
-}
-
-function mergeExtra(payload, extraJson) {
-  const extra = parseJsonField(extraJson, {});
-  if (!extra || typeof extra !== "object" || Array.isArray(extra)) {
-    throw new Error("Extra JSON must be an object.");
-  }
-  return { ...payload, ...extra };
-}
-
 export default function Home() {
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [authMode, setAuthMode] = useState(AUTH_OPTIONS[0].value);
-  const [format, setFormat] = useState(FORMAT_OPTIONS[0].value);
+  const [format, setFormat] = useState(SEEDANCE_FORMATS.official);
 
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [prompt, setPrompt] = useState("");
-  const [ratio, setRatio] = useState("16:9");
+  const [ratio, setRatio] = useState("adaptive");
   const [resolution, setResolution] = useState("720p");
   const [duration, setDuration] = useState("5");
   const [seed, setSeed] = useState("");
@@ -140,6 +139,9 @@ export default function Home() {
   const [newImageUrl, setNewImageUrl] = useState("");
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [newAudioUrl, setNewAudioUrl] = useState("");
+  const [newImageRole, setNewImageRole] = useState("");
+  const [newVideoRole, setNewVideoRole] = useState("reference_video");
+  const [newAudioRole, setNewAudioRole] = useState("reference_audio");
   const [extraJson, setExtraJson] = useState("");
   const [rawJson, setRawJson] = useState("");
 
@@ -174,71 +176,41 @@ export default function Home() {
       resolution,
       duration,
       model,
-      images: imageUrls,
-      videos: videoUrls,
-      audios: audioUrls,
+      images: imageUrls.map(mediaUrl),
+      videos: videoUrls.map(mediaUrl),
+      audios: audioUrls.map(mediaUrl),
     }),
     [audioUrls, duration, imageUrls, model, prompt, ratio, resolution, videoUrls],
   );
 
-  const payload = useMemo(() => {
-    const seconds = Number(duration);
-    const seedValue = seed.trim() ? Number(seed) : undefined;
-    const commonMetadata = {
-      ratio,
-      resolution,
-      seconds,
-      seed: seedValue,
-      watermark,
-      camera_fixed: cameraFixed,
-      generate_audio: generateAudio,
-      return_last_frame: returnLastFrame,
-      service_tier: serviceTier.trim() || undefined,
-      callback_url: callbackUrl.trim() || undefined,
-    };
-
-    Object.keys(commonMetadata).forEach((key) => {
-      if (commonMetadata[key] === undefined || commonMetadata[key] === "") {
-        delete commonMetadata[key];
-      }
-    });
-
-    if (format === "raw") {
-      return parseJsonField(rawJson, {});
+  const payloadState = useMemo(() => {
+    try {
+      return {
+        payload: buildSeedancePayload({
+          format,
+          rawJson,
+          extraJson,
+          model,
+          prompt,
+          ratio,
+          resolution,
+          duration,
+          seed,
+          watermark,
+          cameraFixed,
+          generateAudio,
+          returnLastFrame,
+          serviceTier,
+          callbackUrl,
+          images: imageUrls,
+          videos: videoUrls,
+          audios: audioUrls,
+        }),
+        error: null,
+      };
+    } catch (err) {
+      return { payload: null, error: err.message };
     }
-
-    if (format === "native") {
-      const content = [];
-      if (prompt.trim()) content.push({ type: "text", text: prompt.trim() });
-      imageUrls.forEach((url) => content.push({ type: "image_url", image_url: { url } }));
-      videoUrls.forEach((url) => content.push({ type: "video_url", video_url: { url } }));
-      audioUrls.forEach((url) => content.push({ type: "audio_url", audio_url: { url } }));
-
-      return mergeExtra(
-        {
-          model: model.trim(),
-          content,
-          ...commonMetadata,
-        },
-        extraJson,
-      );
-    }
-
-    return mergeExtra(
-      {
-        model: model.trim(),
-        prompt: prompt.trim(),
-        image: imageUrls[0],
-        images: imageUrls,
-        videos: videoUrls,
-        audios: audioUrls,
-        seconds,
-        ratio,
-        resolution,
-        metadata: commonMetadata,
-      },
-      extraJson,
-    );
   }, [
     audioUrls,
     callbackUrl,
@@ -261,12 +233,9 @@ export default function Home() {
   ]);
 
   const payloadPreview = useMemo(() => {
-    try {
-      return JSON.stringify(payload, null, 2);
-    } catch (err) {
-      return err.message;
-    }
-  }, [payload]);
+    if (payloadState.error) return payloadState.error;
+    return JSON.stringify(payloadState.payload, null, 2);
+  }, [payloadState]);
 
   const apiHeaders = () => ({
     "x-api-url": apiUrl.trim(),
@@ -274,10 +243,10 @@ export default function Home() {
     "x-auth-mode": authMode,
   });
 
-  const addUrl = (value, setter, list, resetter) => {
+  const addUrl = (value, role, setter, list, resetter) => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    setter([...list, trimmed]);
+    setter([...list, { url: trimmed, role }]);
     resetter("");
   };
 
@@ -312,7 +281,7 @@ export default function Home() {
         setResultUrl(data.imageUrl);
         setLoading(false);
       } else if (data.status === "failed") {
-        throw new Error("Generation failed.");
+        throw new Error(data.error || "Generation failed.");
       } else {
         setTimeout(() => pollStatus(requestId), 3000);
       }
@@ -324,8 +293,12 @@ export default function Home() {
 
   const handleSubmit = async () => {
     if (!requireConfig()) return;
-    if (format !== "raw" && !prompt.trim()) {
-      setError("Prompt is required unless using raw JSON.");
+    if (payloadState.error) {
+      setError(payloadState.error);
+      return;
+    }
+    if (format !== SEEDANCE_FORMATS.raw && !payloadState.payload.content.length) {
+      setError("Add at least one official content item.");
       return;
     }
 
@@ -342,7 +315,7 @@ export default function Home() {
           "Content-Type": "application/json",
           ...apiHeaders(),
         },
-        body: JSON.stringify({ payload, metadata }),
+        body: JSON.stringify({ payload: payloadState.payload, metadata }),
       });
       const data = await res.json();
 
@@ -446,16 +419,16 @@ export default function Home() {
             </label>
           </div>
 
-          {format !== "raw" ? (
+          {format !== SEEDANCE_FORMATS.raw ? (
             <>
               <label className="space-y-1.5">
                 <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
-                  Prompt
+                  Text
                 </span>
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Describe the video to generate..."
+                  placeholder="Optional text prompt..."
                   className="w-full h-28 bg-glass-bg border border-glass-border rounded-md p-3 text-sm outline-none focus:border-primary-500/40 resize-none transition-colors custom-scrollbar"
                 />
               </label>
@@ -527,8 +500,11 @@ export default function Home() {
                   label="Images"
                   value={newImageUrl}
                   setValue={setNewImageUrl}
+                  role={newImageRole}
+                  setRole={setNewImageRole}
+                  roleOptions={IMAGE_ROLE_OPTIONS}
                   items={imageUrls}
-                  addItem={() => addUrl(newImageUrl, setImageUrls, imageUrls, setNewImageUrl)}
+                  addItem={() => addUrl(newImageUrl, newImageRole, setImageUrls, imageUrls, setNewImageUrl)}
                   removeItem={(index) => removeUrl(setImageUrls, imageUrls, index)}
                   preview="image"
                 />
@@ -536,8 +512,11 @@ export default function Home() {
                   label="Videos"
                   value={newVideoUrl}
                   setValue={setNewVideoUrl}
+                  role={newVideoRole}
+                  setRole={setNewVideoRole}
+                  roleOptions={VIDEO_ROLE_OPTIONS}
                   items={videoUrls}
-                  addItem={() => addUrl(newVideoUrl, setVideoUrls, videoUrls, setNewVideoUrl)}
+                  addItem={() => addUrl(newVideoUrl, newVideoRole, setVideoUrls, videoUrls, setNewVideoUrl)}
                   removeItem={(index) => removeUrl(setVideoUrls, videoUrls, index)}
                   preview="video"
                 />
@@ -545,8 +524,11 @@ export default function Home() {
                   label="Audio"
                   value={newAudioUrl}
                   setValue={setNewAudioUrl}
+                  role={newAudioRole}
+                  setRole={setNewAudioRole}
+                  roleOptions={AUDIO_ROLE_OPTIONS}
                   items={audioUrls}
-                  addItem={() => addUrl(newAudioUrl, setAudioUrls, audioUrls, setNewAudioUrl)}
+                  addItem={() => addUrl(newAudioUrl, newAudioRole, setAudioUrls, audioUrls, setNewAudioUrl)}
                   removeItem={(index) => removeUrl(setAudioUrls, audioUrls, index)}
                   preview="audio"
                 />
@@ -673,7 +655,9 @@ export default function Home() {
   );
 }
 
-function MediaList({ label, value, setValue, items, addItem, removeItem, preview }) {
+function MediaList({ label, value, setValue, role, setRole, roleOptions, items, addItem, removeItem, preview }) {
+  const placeholderLabel = label === "Audio" ? "Audio" : label.slice(0, -1);
+
   return (
     <div className="space-y-3">
       <label className="text-[10px] font-medium text-muted uppercase tracking-wider">
@@ -684,7 +668,7 @@ function MediaList({ label, value, setValue, items, addItem, removeItem, preview
           type="url"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder={`${label.slice(0, -1)} URL...`}
+          placeholder={`${placeholderLabel} URL...`}
           className="flex-1 bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
         />
         <button
@@ -696,9 +680,16 @@ function MediaList({ label, value, setValue, items, addItem, removeItem, preview
           <FaPlus />
         </button>
       </div>
+      {roleOptions?.length > 1 && (
+        <CustomSelect label="Role" value={role} options={roleOptions} onChange={setRole} />
+      )}
       {items.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {items.map((url, index) => (
+          {items.map((item, index) => {
+            const url = mediaUrl(item);
+            const itemRole = typeof item === "string" ? "" : item.role;
+
+            return (
             <div
               key={`${url}-${index}`}
               className="relative aspect-square rounded-md bg-glass-bg overflow-hidden group border border-glass-border"
@@ -719,6 +710,11 @@ function MediaList({ label, value, setValue, items, addItem, removeItem, preview
                   {url.split("/").pop() || url}
                 </div>
               )}
+              {itemRole && (
+                <span className="absolute left-1 bottom-1 max-w-[calc(100%-0.5rem)] truncate rounded bg-black/70 px-1.5 py-0.5 text-[8px] text-white">
+                  {itemRole}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => removeItem(index)}
@@ -727,7 +723,8 @@ function MediaList({ label, value, setValue, items, addItem, removeItem, preview
                 <FaTrash className="text-white text-[10px]" />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
