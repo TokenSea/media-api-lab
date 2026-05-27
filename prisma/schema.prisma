@@ -1,0 +1,25 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Creation {
+  id          String   @id @default(cuid())
+  prompt      String
+  imageUrl    String?
+  aspectRatio String?
+  resolution  String?
+  createdAt   DateTime @default(now())
+  error       String?
+  requestId   String?  @unique
+  status      String   @default("processing")
+  duration    Int?
+  model       String?
+  audioFiles  String[]
+  videoFiles  String[]
+  inputImages String[]
+}
