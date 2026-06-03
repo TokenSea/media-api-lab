@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiKey, requireApiUrl } from "@/lib/byok";
+import { extractImage } from "@/lib/image-response";
 
 function providerHeaders(apiKey, authMode) {
   const headers = {
@@ -23,14 +24,6 @@ function parseJson(text) {
   } catch {
     return { raw: text };
   }
-}
-
-function extractImage(data) {
-  const first = Array.isArray(data?.data) ? data.data[0] : data?.data;
-  const b64 = data?.b64_json || first?.b64_json || data?.image?.b64_json;
-  const url = data?.url || first?.url || data?.image?.url;
-
-  return { b64, url };
 }
 
 export async function POST(req) {

@@ -5,9 +5,14 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { FaChevronDown, FaCode, FaImage, FaKey, FaLink } from "react-icons/fa";
 import { FiDownload } from "react-icons/fi";
-
-const DEFAULT_IMAGE_API_URL = "https://api.openai.com/v1/images/generations";
-const DEFAULT_IMAGE_MODEL = "gpt-image-2";
+import { buildImagePayload, IMAGE_FORMATS } from "@/lib/image-payload";
+import {
+  CHANNEL_PRESETS,
+  DEFAULT_IMAGE_API_URL,
+  GEMINI_CASE_PRESETS,
+  TOKENSEA_GEMINI_API_URL,
+  rawJsonForCase,
+} from "@/lib/image-presets";
 
 const AUTH_OPTIONS = [
   { value: "bearer", label: "Bearer" },
@@ -16,8 +21,9 @@ const AUTH_OPTIONS = [
 ];
 
 const FORMAT_OPTIONS = [
-  { value: "official", label: "OpenAI Official" },
-  { value: "raw", label: "Raw JSON" },
+  { value: IMAGE_FORMATS.openai, label: "OpenAI Images" },
+  { value: IMAGE_FORMATS.gemini, label: "Gemini generateContent" },
+  { value: IMAGE_FORMATS.raw, label: "Raw JSON" },
 ];
 
 const SIZE_OPTIONS = ["1024x1024", "1536x1024", "1024x1536", "auto"].map((value) => ({
@@ -94,30 +100,25 @@ function CustomSelect({ label, value, options, onChange, icon: Icon }) {
   );
 }
 
-function parseJsonField(value, fallback) {
-  if (!value.trim()) return fallback;
-  return JSON.parse(value);
-}
-
-function cleanObject(value) {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => item !== "" && item !== undefined && item !== null),
-  );
-}
-
 function imageDataUri(image, outputFormat) {
   if (image?.url) return image.url;
   if (!image?.b64) return null;
-  return `data:image/${outputFormat};base64,${image.b64}`;
+  return `data:${image.mimeType || `image/${outputFormat}`};base64,${image.b64}`;
+}
+
+function imageExtension(image, outputFormat) {
+  return image?.mimeType?.split("/")?.[1] || outputFormat;
 }
 
 export default function ImagesPage() {
+  const [channelPreset, setChannelPreset] = useState(CHANNEL_PRESETS[0].value);
+  const [geminiCase, setGeminiCase] = useState(GEMINI_CASE_PRESETS[0].value);
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [authMode, setAuthMode] = useState(AUTH_OPTIONS[0].value);
-  const [format, setFormat] = useState(FORMAT_OPTIONS[0].value);
+  const [format, setFormat] = useState(CHANNEL_PRESETS[0].format);
 
-  const [model, setModel] = useState(DEFAULT_IMAGE_MODEL);
+  const [model, setModel] = useState(CHANNEL_PRESETS[0].model);
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("auto");
@@ -138,9 +139,24 @@ export default function ImagesPage() {
   const [providerResponse, setProviderResponse] = useState(null);
 
   useEffect(() => {
-    setApiUrl(window.localStorage.getItem("gpt_image_api_url") || DEFAULT_IMAGE_API_URL);
+    const savedApiUrl = window.localStorage.getItem("gpt_image_api_url") || TOKENSEA_GEMINI_API_URL;
+    const savedFormat = window.localStorage.getItem("gpt_image_format") || CHANNEL_PRESETS[0].format;
+    const savedModel = window.localStorage.getItem("gpt_image_model") || CHANNEL_PRESETS[0].model;
+    const savedAuthMode = window.localStorage.getItem("gpt_image_auth_mode") || AUTH_OPTIONS[0].value;
+    const matchingPreset = CHANNEL_PRESETS.find((preset) => (
+      preset.apiUrl === savedApiUrl &&
+      preset.format === savedFormat &&
+      preset.model === savedModel &&
+      preset.authMode === savedAuthMode
+    ));
+
+    setApiUrl(savedApiUrl);
     setApiKey(window.localStorage.getItem("gpt_image_api_key") || "");
-    setAuthMode(window.localStorage.getItem("gpt_image_auth_mode") || AUTH_OPTIONS[0].value);
+    setAuthMode(savedAuthMode);
+    setFormat(savedFormat);
+    setModel(savedModel);
+    setChannelPreset(matchingPreset?.value || "custom");
+    setGeminiCase(window.localStorage.getItem("gpt_image_gemini_case") || GEMINI_CASE_PRESETS[0].value);
   }, []);
 
   useEffect(() => {
@@ -155,28 +171,40 @@ export default function ImagesPage() {
     window.localStorage.setItem("gpt_image_auth_mode", authMode);
   }, [authMode]);
 
+  useEffect(() => {
+    window.localStorage.setItem("gpt_image_format", format);
+  }, [format]);
+
+  useEffect(() => {
+    window.localStorage.setItem("gpt_image_model", model.trim());
+  }, [model]);
+
+  useEffect(() => {
+    window.localStorage.setItem("gpt_image_channel_preset", channelPreset);
+  }, [channelPreset]);
+
+  useEffect(() => {
+    window.localStorage.setItem("gpt_image_gemini_case", geminiCase);
+  }, [geminiCase]);
+
   const payload = useMemo(() => {
-    if (format === "raw") return parseJsonField(rawJson, {});
-
-    const base = cleanObject({
-      model: model.trim(),
-      prompt: prompt.trim(),
-      size,
-      quality,
-      output_format: outputFormat,
+    return buildImagePayload({
       background,
+      extraJson,
+      format,
       moderation,
-      n: Number(n),
-      output_compression: outputCompression ? Number(outputCompression) : undefined,
+      model,
+      n,
+      outputCompression,
+      outputFormat,
+      partialImages,
+      prompt,
+      quality,
+      rawJson,
+      size,
       stream,
-      partial_images: partialImages ? Number(partialImages) : undefined,
-      user: user.trim() || undefined,
+      user,
     });
-
-    return {
-      ...base,
-      ...parseJsonField(extraJson, {}),
-    };
   }, [
     background,
     extraJson,
@@ -204,6 +232,7 @@ export default function ImagesPage() {
   }, [payload]);
 
   const imageSrc = imageDataUri(image, outputFormat);
+  const downloadExtension = imageExtension(image, outputFormat);
 
   const apiHeaders = () => ({
     "x-api-url": apiUrl.trim(),
@@ -217,7 +246,7 @@ export default function ImagesPage() {
       return;
     }
 
-    if (format !== "raw" && !prompt.trim()) {
+    if (format !== IMAGE_FORMATS.raw && !prompt.trim()) {
       setError("Prompt is required unless using raw JSON.");
       return;
     }
@@ -249,6 +278,35 @@ export default function ImagesPage() {
     }
   };
 
+  const applyChannelPreset = (value) => {
+    setChannelPreset(value);
+    const preset = CHANNEL_PRESETS.find((item) => item.value === value);
+    if (!preset || value === "custom") return;
+
+    setApiUrl(preset.apiUrl);
+    setAuthMode(preset.authMode);
+    setFormat(preset.format);
+    setModel(preset.model);
+    setOutputFormat(preset.outputFormat);
+  };
+
+  const applyGeminiCase = (value) => {
+    setGeminiCase(value);
+    const casePreset = GEMINI_CASE_PRESETS.find((item) => item.value === value);
+    if (!casePreset || value === "none") return;
+
+    applyChannelPreset("tokensea-gemini");
+
+    if (casePreset.prompt) {
+      setFormat(casePreset.format || IMAGE_FORMATS.gemini);
+      setPrompt(casePreset.prompt);
+      return;
+    }
+
+    setFormat(IMAGE_FORMATS.raw);
+    setRawJson(rawJsonForCase(casePreset));
+  };
+
   return (
     <div className="flex-1 w-full flex flex-col items-center p-4 md:p-8 overflow-y-auto custom-scrollbar">
       <div className="max-w-7xl w-full mb-8 text-center space-y-4">
@@ -257,7 +315,7 @@ export default function ImagesPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-3xl md:text-5xl font-bold text-foreground tracking-tight"
         >
-          GPT Image 2 API Tester
+          Image API Tester
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: -10 }}
@@ -265,7 +323,7 @@ export default function ImagesPage() {
           transition={{ delay: 0.1 }}
           className="text-sm md:text-base text-muted max-w-3xl mx-auto leading-relaxed"
         >
-          Submit OpenAI-compatible image generation requests with your own endpoint and key.
+          Submit image generation requests with your own endpoint and key.
         </motion.p>
       </div>
 
@@ -279,7 +337,7 @@ export default function ImagesPage() {
               <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
                 Image Request Builder
               </h2>
-              <p className="text-[10px] text-muted">OpenAI-compatible images/generations surface</p>
+              <p className="text-[10px] text-muted">OpenAI images and Gemini generateContent surfaces</p>
             </div>
           </div>
 
@@ -293,7 +351,10 @@ export default function ImagesPage() {
                 <input
                   type="url"
                   value={apiUrl}
-                  onChange={(event) => setApiUrl(event.target.value)}
+                  onChange={(event) => {
+                    setApiUrl(event.target.value);
+                    setChannelPreset("custom");
+                  }}
                   placeholder={DEFAULT_IMAGE_API_URL}
                   className="w-full bg-glass-bg border border-glass-border rounded-md py-2 pl-8 pr-3 text-xs outline-none focus:border-primary-500/40"
                 />
@@ -317,22 +378,54 @@ export default function ImagesPage() {
             </label>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <CustomSelect label="Request Format" value={format} options={FORMAT_OPTIONS} onChange={setFormat} icon={FaCode} />
-            <CustomSelect label="Auth Header" value={authMode} options={AUTH_OPTIONS} onChange={setAuthMode} icon={FaKey} />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <CustomSelect label="Channel" value={channelPreset} options={CHANNEL_PRESETS} onChange={applyChannelPreset} icon={FaLink} />
+            <CustomSelect
+              label="Request Format"
+              value={format}
+              options={FORMAT_OPTIONS}
+              onChange={(value) => {
+                setFormat(value);
+                setChannelPreset("custom");
+              }}
+              icon={FaCode}
+            />
+            <CustomSelect
+              label="Auth Header"
+              value={authMode}
+              options={AUTH_OPTIONS}
+              onChange={(value) => {
+                setAuthMode(value);
+                setChannelPreset("custom");
+              }}
+              icon={FaKey}
+            />
             <label className="space-y-1.5">
               <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
                 Model
               </span>
               <input
                 value={model}
-                onChange={(event) => setModel(event.target.value)}
+                onChange={(event) => {
+                  setModel(event.target.value);
+                  setChannelPreset("custom");
+                }}
                 className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
               />
             </label>
           </div>
 
-          {format === "official" ? (
+          {channelPreset === "tokensea-gemini" && (
+            <CustomSelect
+              label="Gemini Official Case"
+              value={geminiCase}
+              options={GEMINI_CASE_PRESETS}
+              onChange={applyGeminiCase}
+              icon={FaImage}
+            />
+          )}
+
+          {format !== IMAGE_FORMATS.raw ? (
             <>
               <label className="space-y-1.5">
                 <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
@@ -346,74 +439,78 @@ export default function ImagesPage() {
                 />
               </label>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <CustomSelect label="Size" value={size} options={SIZE_OPTIONS} onChange={setSize} />
-                <CustomSelect label="Quality" value={quality} options={QUALITY_OPTIONS} onChange={setQuality} />
-                <CustomSelect label="Format" value={outputFormat} options={OUTPUT_FORMAT_OPTIONS} onChange={setOutputFormat} />
-                <label className="space-y-1.5">
-                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
-                    Count
-                  </span>
-                  <input
-                    value={n}
-                    onChange={(event) => setN(event.target.value)}
-                    inputMode="numeric"
-                    className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
-                  />
-                </label>
-              </div>
+              {format === IMAGE_FORMATS.openai && (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <CustomSelect label="Size" value={size} options={SIZE_OPTIONS} onChange={setSize} />
+                    <CustomSelect label="Quality" value={quality} options={QUALITY_OPTIONS} onChange={setQuality} />
+                    <CustomSelect label="Format" value={outputFormat} options={OUTPUT_FORMAT_OPTIONS} onChange={setOutputFormat} />
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
+                        Count
+                      </span>
+                      <input
+                        value={n}
+                        onChange={(event) => setN(event.target.value)}
+                        inputMode="numeric"
+                        className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
+                      />
+                    </label>
+                  </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <CustomSelect label="Background" value={background} options={BACKGROUND_OPTIONS} onChange={setBackground} />
-                <CustomSelect label="Moderation" value={moderation} options={MODERATION_OPTIONS} onChange={setModeration} />
-                <label className="space-y-1.5">
-                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
-                    Compression
-                  </span>
-                  <input
-                    value={outputCompression}
-                    onChange={(event) => setOutputCompression(event.target.value)}
-                    inputMode="numeric"
-                    placeholder="0-100"
-                    className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
-                  />
-                </label>
-                <label className="space-y-1.5">
-                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
-                    Partial Images
-                  </span>
-                  <input
-                    value={partialImages}
-                    onChange={(event) => setPartialImages(event.target.value)}
-                    inputMode="numeric"
-                    placeholder="optional"
-                    className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
-                  />
-                </label>
-              </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <CustomSelect label="Background" value={background} options={BACKGROUND_OPTIONS} onChange={setBackground} />
+                    <CustomSelect label="Moderation" value={moderation} options={MODERATION_OPTIONS} onChange={setModeration} />
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
+                        Compression
+                      </span>
+                      <input
+                        value={outputCompression}
+                        onChange={(event) => setOutputCompression(event.target.value)}
+                        inputMode="numeric"
+                        placeholder="0-100"
+                        className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
+                      />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
+                        Partial Images
+                      </span>
+                      <input
+                        value={partialImages}
+                        onChange={(event) => setPartialImages(event.target.value)}
+                        inputMode="numeric"
+                        placeholder="optional"
+                        className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
+                      />
+                    </label>
+                  </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="flex items-center gap-2 px-3 py-2 bg-glass-bg border border-glass-border rounded-md text-xs text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={stream}
-                    onChange={(event) => setStream(event.target.checked)}
-                    className="accent-primary-500"
-                  />
-                  Stream
-                </label>
-                <label className="space-y-1.5">
-                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
-                    User
-                  </span>
-                  <input
-                    value={user}
-                    onChange={(event) => setUser(event.target.value)}
-                    placeholder="optional"
-                    className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
-                  />
-                </label>
-              </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="flex items-center gap-2 px-3 py-2 bg-glass-bg border border-glass-border rounded-md text-xs text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={stream}
+                        onChange={(event) => setStream(event.target.checked)}
+                        className="accent-primary-500"
+                      />
+                      Stream
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
+                        User
+                      </span>
+                      <input
+                        value={user}
+                        onChange={(event) => setUser(event.target.value)}
+                        placeholder="optional"
+                        className="w-full bg-glass-bg border border-glass-border rounded-md px-3 py-2 text-xs outline-none focus:border-primary-500/40"
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
 
               <label className="space-y-1.5">
                 <span className="text-[10px] font-medium text-muted uppercase tracking-wider">
@@ -435,7 +532,7 @@ export default function ImagesPage() {
               <textarea
                 value={rawJson}
                 onChange={(event) => setRawJson(event.target.value)}
-                placeholder={`{\n  "model": "${DEFAULT_IMAGE_MODEL}",\n  "prompt": "A studio product shot...",\n  "size": "1024x1024"\n}`}
+                placeholder={`{\n  "contents": [{\n    "role": "user",\n    "parts": [{ "text": "A studio product shot..." }]\n  }],\n  "generationConfig": {\n    "responseModalities": ["TEXT", "IMAGE"]\n  }\n}`}
                 className="w-full h-80 bg-glass-bg border border-glass-border rounded-md p-3 font-mono text-xs outline-none focus:border-primary-500/40 resize-none custom-scrollbar"
               />
             </label>
@@ -490,7 +587,7 @@ export default function ImagesPage() {
                     <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                       <a
                         href={imageSrc}
-                        download={`gpt-image-${Date.now()}.${outputFormat}`}
+                        download={`image-${Date.now()}.${downloadExtension}`}
                         className="p-3 bg-white/90 hover:bg-white text-black rounded-full shadow-2xl transition-all hover:scale-110 active:scale-90 flex"
                       >
                         <FiDownload className="text-xl" />
