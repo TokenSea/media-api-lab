@@ -10,7 +10,6 @@ import {
   CHANNEL_PRESETS,
   DEFAULT_IMAGE_API_URL,
   GEMINI_CASE_PRESETS,
-  TOKENSEA_GEMINI_API_URL,
   rawJsonForCase,
 } from "@/lib/image-presets";
 
@@ -139,7 +138,7 @@ export default function ImagesPage() {
   const [providerResponse, setProviderResponse] = useState(null);
 
   useEffect(() => {
-    const savedApiUrl = window.localStorage.getItem("gpt_image_api_url") || TOKENSEA_GEMINI_API_URL;
+    const savedApiUrl = window.localStorage.getItem("gpt_image_api_url") || CHANNEL_PRESETS[0].apiUrl;
     const savedFormat = window.localStorage.getItem("gpt_image_format") || CHANNEL_PRESETS[0].format;
     const savedModel = window.localStorage.getItem("gpt_image_model") || CHANNEL_PRESETS[0].model;
     const savedAuthMode = window.localStorage.getItem("gpt_image_auth_mode") || AUTH_OPTIONS[0].value;

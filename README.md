@@ -25,13 +25,19 @@ The Seedance tester defaults to the Volcengine Ark official video generation tas
 https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks
 ```
 
-The image tester defaults to the Tokensea Gemini/Lovart `generateContent` endpoint:
+The image tester defaults to the Tokensea OpenAI Images-compatible endpoint:
 
 ```text
-https://agent.tokensea.ai/v1/models/vertex/nano-banana-2:generateContent
+https://agent.tokensea.ai/v1/images/generations
 ```
 
-The OpenAI-compatible image preset uses:
+This default uses the OpenAI Images payload shape with model `gpt-image-2` and does not add `response_format`, matching the current gateway behavior where GPT image models default to `b64_json`. A Tokensea Gemini/Lovart `generateContent` preset remains available for Gemini-style payload checks:
+
+```text
+https://agent.tokensea.ai/v1/models/gemini-3.1-flash-image:generateContent
+```
+
+The official OpenAI image preset uses:
 
 ```text
 https://api.openai.com/v1/images/generations
@@ -79,8 +85,8 @@ The Seedance page supports:
 
 The image page supports:
 
-- Tokensea Gemini/Lovart `generateContent` payloads for text-to-image, `generationConfig.imageConfig` aspect/size requests, inline image editing, multi-image references, and hosted `file_data` references.
 - OpenAI-compatible image fields such as `model`, `prompt`, `size`, `quality`, `background`, `output_format`, `output_compression`, `moderation`, `n`, `stream`, `partial_images`, and `user`.
+- Tokensea Gemini/Lovart `generateContent` payloads for text-to-image, `generationConfig.imageConfig` aspect/size requests, inline image editing, multi-image references, and hosted `file_data` references.
 - Raw JSON payload override for exact provider compatibility checks.
 
 ## Persistence

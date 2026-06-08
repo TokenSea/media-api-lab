@@ -2,11 +2,23 @@ import { IMAGE_FORMATS } from "./image-payload.js";
 
 export const DEFAULT_IMAGE_API_URL = "https://api.openai.com/v1/images/generations";
 export const DEFAULT_IMAGE_MODEL = "gpt-image-2";
+export const TOKENSEA_OPENAI_IMAGES_API_URL =
+  "https://agent.tokensea.ai/v1/images/generations";
+export const TOKENSEA_OPENAI_IMAGES_MODEL = "gpt-image-2";
 export const TOKENSEA_GEMINI_API_URL =
-  "https://agent.tokensea.ai/v1/models/vertex/nano-banana-2:generateContent";
-export const TOKENSEA_GEMINI_MODEL = "vertex/nano-banana-2";
+  "https://agent.tokensea.ai/v1/models/gemini-3.1-flash-image:generateContent";
+export const TOKENSEA_GEMINI_MODEL = "gemini-3.1-flash-image";
 
 export const CHANNEL_PRESETS = [
+  {
+    value: "tokensea-openai",
+    label: "Tokensea Images",
+    apiUrl: TOKENSEA_OPENAI_IMAGES_API_URL,
+    authMode: "bearer",
+    format: IMAGE_FORMATS.openai,
+    model: TOKENSEA_OPENAI_IMAGES_MODEL,
+    outputFormat: "png",
+  },
   {
     value: "tokensea-gemini",
     label: "Tokensea Gemini",
